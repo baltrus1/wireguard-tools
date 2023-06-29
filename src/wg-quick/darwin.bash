@@ -7,6 +7,7 @@
 set -e -o pipefail
 shopt -s extglob
 export LC_ALL=C
+export WG_IMPL=KERNEL
 
 SELF="${BASH_SOURCE[0]}"
 [[ $SELF == */* ]] || SELF="./$SELF"
@@ -112,7 +113,10 @@ get_real_interface() {
 	wg show interfaces >/dev/null
 	[[ -f "/var/run/wireguard/$INTERFACE.name" ]] || return 1
 	interface="$(< "/var/run/wireguard/$INTERFACE.name")"
-	[[ -n $interface && -S "/var/run/wireguard/$interface.sock" ]] || return 1
+	[[ -n $interface ]] || return 1
+	if [[ "$WG_IMPL" != "KERNEL" ]]; then
+		[[ -S "/var/run/wireguard/$interface.sock" ]] || return 1
+	fi
 	diff=$(( $(stat -f %m "/var/run/wireguard/$interface.sock" 2>/dev/null || echo 200) - $(stat -f %m "/var/run/wireguard/$INTERFACE.name" 2>/dev/null || echo 100) ))
 	[[ $diff -ge 2 || $diff -le -2 ]] && return 1
 	REAL_INTERFACE="$interface"
@@ -123,7 +127,12 @@ get_real_interface() {
 add_if() {
 	export WG_TUN_NAME_FILE="/var/run/wireguard/$INTERFACE.name"
 	mkdir -p "/var/run/wireguard/"
-	cmd "${WG_QUICK_USERSPACE_IMPLEMENTATION:-wireguard-go}" utun
+	if [[ "$WG_IMPL" == "KERNEL" ]]; then
+      cmd wireguard-darwin
+    else
+     cmd "${WG_QUICK_USERSPACE_IMPLEMENTATION:-wireguard-go}" utun
+    fi
+	
 	get_real_interface
 }
 
